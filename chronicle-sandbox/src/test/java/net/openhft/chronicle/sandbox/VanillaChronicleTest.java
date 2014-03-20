@@ -386,7 +386,7 @@ public class VanillaChronicleTest {
     public void testConcurrentAppend() throws Exception {
         String basepath = System.getProperty("java.io.tmpdir") + "/testConcurrentAppend";
 
-        // Create with small data and index sizes so that files are created frequently
+        // Create with small data and index sizes so that the test frequently generates new files
         final VanillaChronicleConfig config = new VanillaChronicleConfig()
                 .dataBlockSize(64)
                 .indexBlockSize(64);
