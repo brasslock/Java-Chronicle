@@ -17,8 +17,10 @@
 package net.openhft.chronicle.sandbox;
 
 import org.junit.Test;
-
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import net.openhft.lang.io.IOTools;
 
 import static org.junit.Assert.*;
 
@@ -61,4 +63,82 @@ public class VanillaIndexCacheTest {
         assertTrue(file0.getParentFile().delete());
         file0.getParentFile().getParentFile().delete();
     }
+
+    @Test
+    public void testConcurrentAppend() throws Exception {
+        File dir = new File(System.getProperty("java.io.tmpdir"), "testConcurrentAppend");
+        IOTools.deleteDir(dir.getAbsolutePath());
+
+        DateCache dateCache = new DateCache("yyyyMMddHHmmss", 1000);
+        VanillaIndexCache cache = new VanillaIndexCache(dir.getAbsolutePath(), 5, dateCache);
+
+        int cycle = (int) (System.currentTimeMillis() / 1000);
+
+        int numberOfTasks = 2;
+        final int count = 100;
+
+        final List<IndexAppendTask> tasks = new ArrayList<>();
+        final List<Thread> threads = new ArrayList<>();
+
+        long startIndex = 10000;
+        for (int i = 0; i < numberOfTasks; i++) {
+            final long endIndex = startIndex + count;
+            final IndexAppendTask task = new IndexAppendTask(cache, cycle, startIndex, endIndex);
+            tasks.add(task);
+            threads.add(new Thread(task, "task" + i));
+            startIndex = endIndex;
+        }
+
+        for (Thread thread : threads) {
+            thread.start();
+        }
+        for (Thread thread : threads) {
+            thread.join();
+        }
+        for (IndexAppendTask task : tasks) {
+            task.assertIfFailed();
+        }
+
+        cache.close();
+    }
+
+
+
+    private static class IndexAppendTask implements Runnable {
+        private final VanillaIndexCache cache;
+        private final int cycle;
+        private final long start;
+        private final long end;
+
+        private volatile AssertionError failure;
+
+        private IndexAppendTask(final VanillaIndexCache cache, final int cycle, final long start, final long end) {
+            this.cache = cache;
+            this.cycle = cycle;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        public void run() {
+            long index = start;
+            while (failure == null && index < end) {
+                try {
+                    System.out.println("Appending " + index);
+                    cache.append(cycle, index, false);
+                    index++;
+                } catch (Throwable e) {
+                    this.failure = new AssertionError("Failed append for index " + index, e);
+                }
+            }
+            System.out.println("Finished task at " + index);
+        }
+
+        public void assertIfFailed() throws AssertionError {
+            if (failure != null) {
+                throw failure;
+            }
+        }
+    }
+
 }
