@@ -77,7 +77,8 @@ public class VanillaIndexCache implements Closeable {
 
     int lastIndexFile(int cycle) {
         int maxIndex = 0;
-        File[] files = new File(dateCache.formatFor(cycle)).listFiles();
+        File cyclePath = new File(baseFile, dateCache.formatFor(cycle));
+        File[] files = cyclePath.listFiles();
         if (files != null)
             for (File file : files) {
                 String name = file.getName();
