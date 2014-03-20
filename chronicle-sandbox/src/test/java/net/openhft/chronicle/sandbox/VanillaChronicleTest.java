@@ -388,7 +388,7 @@ public class VanillaChronicleTest {
 
         // Create with small data and index sizes so that files are created frequently
         final VanillaChronicleConfig config = new VanillaChronicleConfig()
-                .dataBlockSize(32)
+                .dataBlockSize(64)
                 .indexBlockSize(64);
         VanillaChronicle chronicle = new VanillaChronicle(basepath, config);
         chronicle.clear();
