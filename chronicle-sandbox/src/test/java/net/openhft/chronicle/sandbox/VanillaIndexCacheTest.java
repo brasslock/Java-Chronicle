@@ -20,9 +20,12 @@ import org.junit.Test;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+
+import net.openhft.affinity.AffinitySupport;
 import net.openhft.lang.io.IOTools;
 
 import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 public class VanillaIndexCacheTest {
     @Test
@@ -65,6 +68,35 @@ public class VanillaIndexCacheTest {
     }
 
     @Test
+    public void testLastIndexFile() throws Exception {
+        File dir = new File(System.getProperty("java.io.tmpdir"), "testLastIndexFile");
+        IOTools.deleteDir(dir.getAbsolutePath());
+
+        DateCache dateCache = new DateCache("yyyyMMddHHmmss", 1000);
+        VanillaIndexCache cache = new VanillaIndexCache(dir.getAbsolutePath(), 10 + 3, dateCache);
+
+        int cycle = (int) (System.currentTimeMillis() / 1000);
+
+        // Check that the index file count starts at 0 when the data directory is empty
+        assertEquals(0, cache.lastIndexFile(cycle));
+
+        VanillaFile vanillaFile0 = cache.indexFor(cycle, 0, true);
+        assertEquals("index-0", vanillaFile0.file().getName());
+        vanillaFile0.decrementUsage();
+        assertEquals(0, cache.lastIndexFile(cycle));
+
+        VanillaFile vanillaFile1 = cache.indexFor(cycle, 1, true);
+        assertEquals("index-1", vanillaFile1.file().getName());
+        assertEquals(1, cache.lastIndexFile(cycle));
+
+        VanillaFile vanillaFile3 = cache.indexFor(cycle, 3, true);
+        assertEquals("index-3", vanillaFile3.file().getName());
+        assertEquals(3, cache.lastIndexFile(cycle));
+
+        IOTools.deleteDir(dir.getAbsolutePath());
+    }
+
+    @Test
     public void testConcurrentAppend() throws Exception {
         File dir = new File(System.getProperty("java.io.tmpdir"), "testConcurrentAppend");
         IOTools.deleteDir(dir.getAbsolutePath());
@@ -76,20 +108,20 @@ public class VanillaIndexCacheTest {
 
         int cycle = (int) (System.currentTimeMillis() / 1000);
         final int numberOfTasks = 2;
-        final int count = 1000;
+        final int countPerTask = 100;
 
         // Create and start concurrent tasks that append to the index
         final List<IndexAppendTask> tasks = new ArrayList<>();
         final List<Thread> threads = new ArrayList<>();
-        long startIndex = count;
+        long startValue = countPerTask;
         for (int i = 0; i < numberOfTasks; i++) {
-            final long endIndex = startIndex + count;
-            final IndexAppendTask task = new IndexAppendTask(cache, cycle, startIndex, endIndex);
+            final long endValue = startValue + countPerTask;
+            final IndexAppendTask task = new IndexAppendTask(cache, cycle, startValue, endValue);
             tasks.add(task);
             final Thread thread = new Thread(task, "task" + i);
             threads.add(thread);
             thread.start();
-            startIndex = endIndex;
+            startValue = endValue;
         }
 
         // Wait for all tasks to finish
@@ -102,8 +134,13 @@ public class VanillaIndexCacheTest {
             task.assertIfFailed();
         }
 
+        final int indexFile = cache.lastIndexFile(cycle);
+        System.out.println("## " + indexFile);
+        // Verify that all index values can be read back
+
         cache.close();
-        IOTools.deleteDir(dir.getAbsolutePath());
+
+//        IOTools.deleteDir(dir.getAbsolutePath());
     }
 
 
@@ -124,16 +161,16 @@ public class VanillaIndexCacheTest {
 
         @Override
         public void run() {
-            long index = start;
-            while (failure == null && index < end) {
+            long counter = start;
+            while (failure == null && counter < end) {
                 try {
-                    cache.append(cycle, index, false);
-                    index++;
+                    cache.append(cycle, counter, false);
+                    counter++;
                 } catch (Throwable e) {
-                    this.failure = new AssertionError("Failed append for index " + index, e);
+                    this.failure = new AssertionError("Failed append for counter " + counter, e);
                 }
             }
-            System.out.println(String.format("Task %s for %s to %s", (failure == null) ? "SUCCESS" : "FAIL", start, index - 1));
+            System.out.println(String.format("Task %s for %s to %s", (failure == null) ? "SUCCESS" : "FAIL", start, counter - 1));
         }
 
         public void assertIfFailed() throws AssertionError {
