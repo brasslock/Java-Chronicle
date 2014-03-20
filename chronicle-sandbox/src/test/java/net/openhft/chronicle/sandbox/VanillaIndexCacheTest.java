@@ -20,9 +20,11 @@ import org.junit.Test;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
-import net.openhft.affinity.AffinitySupport;
 import net.openhft.lang.io.IOTools;
+import net.openhft.lang.io.NativeBytes;
 
 import static org.junit.Assert.*;
 import static org.junit.Assert.assertEquals;
@@ -108,7 +110,7 @@ public class VanillaIndexCacheTest {
 
         int cycle = (int) (System.currentTimeMillis() / 1000);
         final int numberOfTasks = 2;
-        final int countPerTask = 100;
+        final int countPerTask = 1000;
 
         // Create and start concurrent tasks that append to the index
         final List<IndexAppendTask> tasks = new ArrayList<>();
@@ -134,15 +136,39 @@ public class VanillaIndexCacheTest {
             task.assertIfFailed();
         }
 
-        final int indexFile = cache.lastIndexFile(cycle);
-        System.out.println("## " + indexFile);
-        // Verify that all index values can be read back
+        // Verify that all values can be read back from the index
+        final Set<Long> indexValues = new TreeSet<>();
+        for (int i = 0; i <= cache.lastIndexFile(cycle); i++) {
+            final VanillaFile vanillaFile = cache.indexFor(cycle, i, false);
+            indexValues.addAll(readAllIndexValues(vanillaFile));
+            vanillaFile.decrementUsage();
+        }
+
+        assertEquals(createRangeSet(countPerTask, startValue), indexValues);
 
         cache.close();
-
-//        IOTools.deleteDir(dir.getAbsolutePath());
+        IOTools.deleteDir(dir.getAbsolutePath());
     }
 
+    private Set<Long> readAllIndexValues(final VanillaFile vanillaFile) {
+        final Set<Long> indexValues = new TreeSet<>();
+        final NativeBytes bytes = vanillaFile.bytes();
+        bytes.position(0);
+        while (bytes.remaining() >= 8) {
+            indexValues.add(bytes.readLong());
+        }
+        return indexValues;
+    }
+
+    private static Set<Long> createRangeSet(final long start, final long end) {
+        final Set<Long> values = new TreeSet<>();
+        long value = start;
+        while (value < end) {
+            values.add(value);
+            value++;
+        }
+        return values;
+    }
 
     private static class IndexAppendTask implements Runnable {
         private final VanillaIndexCache cache;
