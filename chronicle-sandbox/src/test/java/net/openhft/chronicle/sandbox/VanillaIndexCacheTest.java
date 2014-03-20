@@ -70,31 +70,34 @@ public class VanillaIndexCacheTest {
         IOTools.deleteDir(dir.getAbsolutePath());
 
         DateCache dateCache = new DateCache("yyyyMMddHHmmss", 1000);
+
+        // Use a small index file size so that the test frequently generates new files
         VanillaIndexCache cache = new VanillaIndexCache(dir.getAbsolutePath(), 5, dateCache);
 
         int cycle = (int) (System.currentTimeMillis() / 1000);
+        final int numberOfTasks = 2;
+        final int count = 1000;
 
-        int numberOfTasks = 2;
-        final int count = 100;
-
+        // Create and start concurrent tasks that append to the index
         final List<IndexAppendTask> tasks = new ArrayList<>();
         final List<Thread> threads = new ArrayList<>();
-
-        long startIndex = 10000;
+        long startIndex = count;
         for (int i = 0; i < numberOfTasks; i++) {
             final long endIndex = startIndex + count;
             final IndexAppendTask task = new IndexAppendTask(cache, cycle, startIndex, endIndex);
             tasks.add(task);
-            threads.add(new Thread(task, "task" + i));
+            final Thread thread = new Thread(task, "task" + i);
+            threads.add(thread);
+            thread.start();
             startIndex = endIndex;
         }
 
-        for (Thread thread : threads) {
-            thread.start();
-        }
+        // Wait for all tasks to finish
         for (Thread thread : threads) {
             thread.join();
         }
+
+        // Fail if any tasks failed
         for (IndexAppendTask task : tasks) {
             task.assertIfFailed();
         }
