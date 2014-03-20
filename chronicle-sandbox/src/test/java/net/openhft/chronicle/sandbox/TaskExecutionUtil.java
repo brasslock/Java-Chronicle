@@ -12,8 +12,8 @@ public class TaskExecutionUtil {
     public static void executeConcurrentTasks(final List<? extends Callable<Void>> tasks, final long taskTimeoutMillis) {
 
         // Create and start a thread per task
-        final List<TaskRunner> taskRunners = new ArrayList<>();
-        final List<Thread> threads = new ArrayList<>();
+        final List<TaskRunner> taskRunners = new ArrayList<TaskRunner>();
+        final List<Thread> threads = new ArrayList<Thread>();
         for (Callable<Void> task : tasks) {
             final TaskRunner taskRunner = new TaskRunner(task);
             taskRunners.add(taskRunner);

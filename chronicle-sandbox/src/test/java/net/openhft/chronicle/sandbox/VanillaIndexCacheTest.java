@@ -115,7 +115,7 @@ public class VanillaIndexCacheTest {
         final int countPerTask = 1000;
 
         // Create tasks that append to the index
-        final List<Callable<Void>> tasks = new ArrayList<>();
+        final List<Callable<Void>> tasks = new ArrayList<Callable<Void>>();
         long nextValue = countPerTask;
         for (int i = 0; i < numberOfTasks; i++) {
             final long endValue = nextValue + countPerTask;
@@ -135,7 +135,7 @@ public class VanillaIndexCacheTest {
     }
 
     private Set<Long> readAllIndexValues(final VanillaIndexCache cache, final int cycle) throws IOException {
-        final Set<Long> indexValues = new TreeSet<>();
+        final Set<Long> indexValues = new TreeSet<Long>();
         for (int i = 0; i <= cache.lastIndexFile(cycle); i++) {
             final VanillaFile vanillaFile = cache.indexFor(cycle, i, false);
             indexValues.addAll(readAllIndexValues(vanillaFile));
@@ -145,7 +145,7 @@ public class VanillaIndexCacheTest {
     }
 
     private Set<Long> readAllIndexValues(final VanillaFile vanillaFile) {
-        final Set<Long> indexValues = new TreeSet<>();
+        final Set<Long> indexValues = new TreeSet<Long>();
         final NativeBytes bytes = vanillaFile.bytes();
         bytes.position(0);
         while (bytes.remaining() >= 8) {
@@ -155,7 +155,7 @@ public class VanillaIndexCacheTest {
     }
 
     private static Set<Long> createRangeSet(final long start, final long end) {
-        final Set<Long> values = new TreeSet<>();
+        final Set<Long> values = new TreeSet<Long>();
         long counter = start;
         while (counter < end) {
             values.add(counter);
