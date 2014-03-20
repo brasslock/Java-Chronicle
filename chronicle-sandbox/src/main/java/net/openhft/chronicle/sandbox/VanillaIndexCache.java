@@ -94,30 +94,35 @@ public class VanillaIndexCache implements Closeable {
     public VanillaFile append(int cycle, long indexValue, boolean synchronous) throws IOException {
         for (int indexCount = lastIndexFile(cycle); indexCount < 10000; indexCount++) {
             VanillaFile file = indexFor(cycle, indexCount, true);
-            NativeBytes bytes = file.bytes();
-
-            // Position can be changed by another thread, so take a snapshot so that
-            // buffer overflows are not generated when advancing to the next position.
-            // The position could step backwards when this method is called concurrently,
-            // but the compareAndSwapLong call ensures that data is never overwritten.
-
-            boolean endOfFile = false;
-            while (!endOfFile) {
-                final long position = bytes.position();
-                endOfFile = (bytes.limit() - position) < 8;
-                if (!endOfFile) {
-                    if (bytes.compareAndSwapLong(position, 0L, indexValue)) {
-                        if (synchronous)
-                            file.force();
-                        return file;
-                    }
-                    bytes.position(position + 8);
-                }
-            }
-
+            if (append(file, indexValue, synchronous))
+                return file;
             file.decrementUsage();
         }
         throw new AssertionError();
+    }
+
+    public static boolean append(final VanillaFile vanillaFile, final long indexValue, final boolean synchronous) {
+        NativeBytes bytes = vanillaFile.bytes();
+
+        // Position can be changed by another thread, so take a snapshot so that
+        // buffer overflows are not generated when advancing to the next position.
+        // The position could step backwards when this method is called concurrently,
+        // but the compareAndSwapLong call ensures that data is never overwritten.
+
+        boolean endOfFile = false;
+        while (!endOfFile) {
+            final long position = bytes.position();
+            endOfFile = (bytes.limit() - position) < 8;
+            if (!endOfFile) {
+                if (bytes.compareAndSwapLong(position, 0L, indexValue)) {
+                    if (synchronous)
+                        vanillaFile.force();
+                    return true;
+                }
+                bytes.position(position + 8);
+            }
+        }
+        return false;
     }
 
     public long firstIndex() {
