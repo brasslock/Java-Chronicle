@@ -96,19 +96,24 @@ public class VanillaIndexCache implements Closeable {
             NativeBytes bytes = file.bytes();
 
             // Position can be changed by another thread, so take a snapshot so that
-            // buffer overflows are not generated when advancing to the next position
+            // buffer overflows are not generated when advancing to the next position.
+            // The position could step backwards when this method is called concurrently,
+            // but the compareAndSwapLong call ensures that data is never overwritten.
 
-            // when we advance to the next position
-            long position = bytes.position();
-            while (bytes.limit() - position >= 8) {
-                if (bytes.compareAndSwapLong(position, 0L, indexValue)) {
-                    if (synchronous)
-                        file.force();
-                    return file;
+            boolean endOfFile = false;
+            while (!endOfFile) {
+                final long position = bytes.position();
+                endOfFile = (bytes.limit() - position) < 8;
+                if (!endOfFile) {
+                    if (bytes.compareAndSwapLong(position, 0L, indexValue)) {
+                        if (synchronous)
+                            file.force();
+                        return file;
+                    }
+                    bytes.position(position + 8);
                 }
-                bytes.position(position + 8);
-                position = bytes.position();
             }
+
             file.decrementUsage();
         }
         throw new AssertionError();

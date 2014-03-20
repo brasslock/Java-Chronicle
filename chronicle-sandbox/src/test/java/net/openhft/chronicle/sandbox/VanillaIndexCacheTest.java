@@ -71,7 +71,7 @@ public class VanillaIndexCacheTest {
 
         DateCache dateCache = new DateCache("yyyyMMddHHmmss", 1000);
 
-        // Use a small index file size so that the test frequently generates new files
+        // Use a small index file size so that the test frequently generates new index files
         VanillaIndexCache cache = new VanillaIndexCache(dir.getAbsolutePath(), 5, dateCache);
 
         int cycle = (int) (System.currentTimeMillis() / 1000);
@@ -106,7 +106,6 @@ public class VanillaIndexCacheTest {
     }
 
 
-
     private static class IndexAppendTask implements Runnable {
         private final VanillaIndexCache cache;
         private final int cycle;
@@ -127,14 +126,13 @@ public class VanillaIndexCacheTest {
             long index = start;
             while (failure == null && index < end) {
                 try {
-                    System.out.println("Appending " + index);
                     cache.append(cycle, index, false);
                     index++;
                 } catch (Throwable e) {
                     this.failure = new AssertionError("Failed append for index " + index, e);
                 }
             }
-            System.out.println("Finished task at " + index);
+            System.out.println(String.format("Task %s for %s to %s", (failure == null) ? "SUCCESS" : "FAIL", start, index - 1));
         }
 
         public void assertIfFailed() throws AssertionError {
