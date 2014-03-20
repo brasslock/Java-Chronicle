@@ -103,6 +103,7 @@ public class VanillaIndexCacheTest {
         }
 
         cache.close();
+        IOTools.deleteDir(dir.getAbsolutePath());
     }
 
 
