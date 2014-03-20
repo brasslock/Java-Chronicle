@@ -18,10 +18,12 @@ package net.openhft.chronicle.sandbox;
 
 import org.junit.Test;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.Callable;
 
 import net.openhft.lang.io.IOTools;
 import net.openhft.lang.io.NativeBytes;
@@ -112,42 +114,34 @@ public class VanillaIndexCacheTest {
         final int numberOfTasks = 2;
         final int countPerTask = 1000;
 
-        // Create and start concurrent tasks that append to the index
-        final List<IndexAppendTask> tasks = new ArrayList<>();
-        final List<Thread> threads = new ArrayList<>();
-        long startValue = countPerTask;
+        // Create tasks that append to the index
+        final List<Callable<Void>> tasks = new ArrayList<>();
+        long nextValue = countPerTask;
         for (int i = 0; i < numberOfTasks; i++) {
-            final long endValue = startValue + countPerTask;
-            final IndexAppendTask task = new IndexAppendTask(cache, cycle, startValue, endValue);
-            tasks.add(task);
-            final Thread thread = new Thread(task, "task" + i);
-            threads.add(thread);
-            thread.start();
-            startValue = endValue;
+            final long endValue = nextValue + countPerTask;
+            tasks.add(createAppendTask(cache, cycle, nextValue, endValue));
+            nextValue = endValue;
         }
 
-        // Wait for all tasks to finish
-        for (Thread thread : threads) {
-            thread.join();
-        }
-
-        // Fail if any tasks failed
-        for (IndexAppendTask task : tasks) {
-            task.assertIfFailed();
-        }
+        // Execute tasks using a thread per task
+        TaskExecutionUtil.executeConcurrentTasks(tasks, 30000L);
 
         // Verify that all values can be read back from the index
+        final Set<Long> indexValues = readAllIndexValues(cache, cycle);
+        assertEquals(createRangeSet(countPerTask, nextValue), indexValues);
+
+        cache.close();
+        IOTools.deleteDir(dir.getAbsolutePath());
+    }
+
+    private Set<Long> readAllIndexValues(final VanillaIndexCache cache, final int cycle) throws IOException {
         final Set<Long> indexValues = new TreeSet<>();
         for (int i = 0; i <= cache.lastIndexFile(cycle); i++) {
             final VanillaFile vanillaFile = cache.indexFor(cycle, i, false);
             indexValues.addAll(readAllIndexValues(vanillaFile));
             vanillaFile.decrementUsage();
         }
-
-        assertEquals(createRangeSet(countPerTask, startValue), indexValues);
-
-        cache.close();
-        IOTools.deleteDir(dir.getAbsolutePath());
+        return indexValues;
     }
 
     private Set<Long> readAllIndexValues(final VanillaFile vanillaFile) {
@@ -162,48 +156,26 @@ public class VanillaIndexCacheTest {
 
     private static Set<Long> createRangeSet(final long start, final long end) {
         final Set<Long> values = new TreeSet<>();
-        long value = start;
-        while (value < end) {
-            values.add(value);
-            value++;
+        long counter = start;
+        while (counter < end) {
+            values.add(counter);
+            counter++;
         }
         return values;
     }
 
-    private static class IndexAppendTask implements Runnable {
-        private final VanillaIndexCache cache;
-        private final int cycle;
-        private final long start;
-        private final long end;
-
-        private volatile AssertionError failure;
-
-        private IndexAppendTask(final VanillaIndexCache cache, final int cycle, final long start, final long end) {
-            this.cache = cache;
-            this.cycle = cycle;
-            this.start = start;
-            this.end = end;
-        }
-
-        @Override
-        public void run() {
-            long counter = start;
-            while (failure == null && counter < end) {
-                try {
+    private Callable<Void> createAppendTask(final VanillaIndexCache cache, final int cycle, final long startValue, final long endValue) {
+        return new Callable<Void>() {
+            @Override
+            public Void call() throws Exception {
+                long counter = startValue;
+                while (counter < endValue) {
                     cache.append(cycle, counter, false);
                     counter++;
-                } catch (Throwable e) {
-                    this.failure = new AssertionError("Failed append for counter " + counter, e);
                 }
+                return null;
             }
-            System.out.println(String.format("Task %s for %s to %s", (failure == null) ? "SUCCESS" : "FAIL", start, counter - 1));
-        }
-
-        public void assertIfFailed() throws AssertionError {
-            if (failure != null) {
-                throw failure;
-            }
-        }
+        };
     }
 
 }
