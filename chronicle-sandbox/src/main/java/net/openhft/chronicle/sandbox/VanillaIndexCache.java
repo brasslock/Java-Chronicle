@@ -94,13 +94,20 @@ public class VanillaIndexCache implements Closeable {
         for (int indexCount = lastIndexFile(cycle); indexCount < 10000; indexCount++) {
             VanillaFile file = indexFor(cycle, indexCount, true);
             NativeBytes bytes = file.bytes();
-            while (bytes.remaining() >= 8) {
-                if (bytes.compareAndSwapLong(bytes.position(), 0L, indexValue)) {
+
+            // Position can be changed by another thread, so take a snapshot so that
+            // buffer overflows are not generated when advancing to the next position
+
+            // when we advance to the next position
+            long position = bytes.position();
+            while (bytes.limit() - position >= 8) {
+                if (bytes.compareAndSwapLong(position, 0L, indexValue)) {
                     if (synchronous)
                         file.force();
                     return file;
                 }
-                bytes.position(bytes.position() + 8);
+                bytes.position(position + 8);
+                position = bytes.position();
             }
             file.decrementUsage();
         }
