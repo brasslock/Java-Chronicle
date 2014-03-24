@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import net.openhft.chronicle.ExcerptAppender;
 import net.openhft.chronicle.ExcerptTailer;
+import net.openhft.lang.io.IOTools;
 
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -412,6 +413,38 @@ public class VanillaChronicleTest {
         final ExcerptTailer tailer = chronicle.createTailer();
         final Set<String> values = readAllValues(tailer);
         assertEquals(createRangeDataSet(countPerTask, nextValue), values);
+        tailer.close();
+
+        chronicle.close();
+    }
+
+    @Test
+    public void testReadAcrossChunks() throws Exception {
+        String basepath = System.getProperty("java.io.tmpdir") + "/testReadAcrossChunks";
+        IOTools.deleteDir(basepath);
+
+        // Create with small data and index sizes so that the test frequently generates new files
+        final VanillaChronicleConfig config = new VanillaChronicleConfig()
+                .cycleLength(60000)
+                .cycleFormat("yyyyMMddHHmmss")
+                .dataBlockSize(64)
+                .indexBlockSize(64);
+        VanillaChronicle chronicle = new VanillaChronicle(basepath, config);
+        chronicle.clear();
+
+//        final ExcerptAppender appender = chronicle.createAppender();
+//        appender.startExcerpt();
+//        appender.writeUTF("data");
+//        appender.finish();
+//        appender.close();
+
+        final Callable<Void> appendTask = createAppendTask(chronicle, 1000, 2000);
+        appendTask.call();
+
+//        // Verify that all values have been written
+        final ExcerptTailer tailer = chronicle.createTailer();
+        final Set<String> values = readAllValues(tailer);
+        assertEquals(createRangeDataSet(1000, 2000), values);
         tailer.close();
 
         chronicle.close();
