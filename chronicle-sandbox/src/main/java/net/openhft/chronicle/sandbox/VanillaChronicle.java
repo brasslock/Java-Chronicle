@@ -507,7 +507,7 @@ public class VanillaChronicle implements Chronicle {
             long dataOffset = appenderFile.indexCount() * config.dataBlockSize() + offset;
             long indexValue = ((long) appenderThreadId << 48) + dataOffset;
 
-//            System.out.println("## " + indexValue);
+            System.out.println("## " + indexValue);
             try {
                 final boolean appendDone = (lastIndexFile != null) && VanillaIndexCache.append(lastIndexFile, indexValue, nextSynchronous);
                 if (!appendDone) {

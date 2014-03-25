@@ -426,9 +426,9 @@ public class VanillaChronicleTest {
         for (int i = 0; i < 100; i++) {
             System.out.println("Iteration = " + i);
 
-            String basepath = System.getProperty("java.io.tmpdir") + "/testRead1";
+            String basepath = System.getProperty("java.io.tmpdir") + "/testRead2";
 //            String basepath = "/data/ross/testCycle";
-//            IOTools.deleteDir(basepath);
+            IOTools.deleteDir(basepath);
 
             // Create with small data and index sizes so that the test frequently generates new files
             final VanillaChronicleConfig config = new VanillaChronicleConfig()
@@ -438,18 +438,18 @@ public class VanillaChronicleTest {
                     .dataBlockSize(128)
                     .indexBlockSize(64);
             VanillaChronicle chronicle = new VanillaChronicle(basepath, config);
-//            chronicle.clear();
+            chronicle.clear();
 
-//            final ExcerptAppender appender = chronicle.createAppender();
+            final ExcerptAppender appender = chronicle.createAppender();
             final ExcerptTailer tailer = chronicle.createTailer();
 
-//            appendValues(appender, 1, 200);
+            appendValues(appender, 1, 300);
 //
 //            Ensure the appender writes in another cycle from the initial writes
 //            Thread.sleep(1000L);
 
             final Set<String> actual = readAvailableValues(tailer);
-            final Set<String> expected = createRangeDataSet(1, 200);
+            final Set<String> expected = createRangeDataSet(1, 300);
             if (!expected.equals(actual)) {
                 System.err.println("ERROR: " + actual);
                 Thread.sleep(10000L);
@@ -489,7 +489,7 @@ public class VanillaChronicleTest {
 //        // Verify that the tailer can read the new data
 //        assertEquals(createRangeDataSet(41, 60), readAvailableValues(tailer));
 
-//        appender.close();
+        appender.close();
             tailer.close();
             chronicle.close();
         }
