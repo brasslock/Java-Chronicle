@@ -202,10 +202,11 @@ public class VanillaChronicle implements Chronicle {
         }
 
         public int cycle() {
-            // HACK - remove this
-            // 20140325051230
-            long currentTime = 1395724350000L;
-            return (int) (currentTime / config.cycleLength());
+//            // HACK - remove this
+//            // 20140325051230
+//            long currentTime = 1395724350000L;
+//            return (int) (currentTime / config.cycleLength());
+            return (int) (System.currentTimeMillis() / config.cycleLength());
         }
 
         private int lastCycle = Integer.MIN_VALUE,
@@ -216,7 +217,7 @@ public class VanillaChronicle implements Chronicle {
 
         public boolean index(long nextIndex) {
             checkNotClosed();
-            System.out.println("@@ " + nextIndex);
+//            System.out.println("@@ " + nextIndex);
             try {
                 int cycle = (int) (nextIndex >>> entriesForCycleBits);
                 int dailyCount = (int) ((nextIndex & entriesForCycleMask) >>> indexBlockLongsBits);
@@ -506,6 +507,7 @@ public class VanillaChronicle implements Chronicle {
             long dataOffset = appenderFile.indexCount() * config.dataBlockSize() + offset;
             long indexValue = ((long) appenderThreadId << 48) + dataOffset;
 
+//            System.out.println("## " + indexValue);
             try {
                 final boolean appendDone = (lastIndexFile != null) && VanillaIndexCache.append(lastIndexFile, indexValue, nextSynchronous);
                 if (!appendDone) {

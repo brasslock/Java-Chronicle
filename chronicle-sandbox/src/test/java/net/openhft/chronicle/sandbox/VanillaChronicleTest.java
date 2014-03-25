@@ -29,8 +29,10 @@ import net.openhft.chronicle.ExcerptAppender;
 import net.openhft.chronicle.ExcerptTailer;
 import net.openhft.lang.io.IOTools;
 
+import org.junit.ComparisonFailure;
 import org.junit.Test;
 import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 public class VanillaChronicleTest {
     private static final int N_THREADS = 4;
@@ -420,31 +422,62 @@ public class VanillaChronicleTest {
 
     @Test
     public void testReadsAndWritesAcrossCycles() throws Exception {
-        String basepath = System.getProperty("java.io.tmpdir") + "/testReadsAndWritesAcrossCycles";
-//        IOTools.deleteDir(basepath);
 
-        // Create with small data and index sizes so that the test frequently generates new files
-        final VanillaChronicleConfig config = new VanillaChronicleConfig()
-                .cycleLength(1000)  // 1 second
-                .entriesPerCycle(1L << 20)  // avoid overflow of the entry indexes
-                .cycleFormat("yyyyMMddHHmmss")
-                .dataBlockSize(128)
-                .indexBlockSize(64);
-        VanillaChronicle chronicle = new VanillaChronicle(basepath, config);
-//        chronicle.clear();
+        for (int i = 0; i < 100; i++) {
+            System.out.println("Iteration = " + i);
 
-//        final ExcerptAppender appender = chronicle.createAppender();
-//        appendValues(appender, 1, 20);
+            String basepath = System.getProperty("java.io.tmpdir") + "/testRead1";
+//            String basepath = "/data/ross/testCycle";
+//            IOTools.deleteDir(basepath);
+
+            // Create with small data and index sizes so that the test frequently generates new files
+            final VanillaChronicleConfig config = new VanillaChronicleConfig()
+                    .cycleLength(1000)  // 1 second
+                    .entriesPerCycle(1L << 20)  // avoid overflow of the entry indexes
+                    .cycleFormat("yyyyMMddHHmmss")
+                    .dataBlockSize(128)
+                    .indexBlockSize(64);
+            VanillaChronicle chronicle = new VanillaChronicle(basepath, config);
+//            chronicle.clear();
+
+//            final ExcerptAppender appender = chronicle.createAppender();
+            final ExcerptTailer tailer = chronicle.createTailer();
+
+//            appendValues(appender, 1, 200);
 //
-//        // Ensure the appender writes in another cycle from the initial writes
-//        Thread.sleep(2000L);
-//        appendValues(appender, 20, 40);
+//            Ensure the appender writes in another cycle from the initial writes
+//            Thread.sleep(1000L);
 
-        // Verify that all values are read by the tailer
-        final ExcerptTailer tailer = chronicle.createTailer();
-        final Set<String> actual = readAvailableValues(tailer);
-        assertEquals(createRangeDataSet(1, 40), actual);
+            final Set<String> actual = readAvailableValues(tailer);
+            final Set<String> expected = createRangeDataSet(1, 200);
+            if (!expected.equals(actual)) {
+                System.err.println("ERROR: " + actual);
+                Thread.sleep(10000L);
 
+                final Set<String> following = readAvailableValues(tailer);
+                System.err.println("FOLLOWING: " + following);
+
+                throw new RuntimeException("failed");
+            }
+
+//            appendValues(appender, 20, 40);
+//
+//            Thread.sleep(1000L);
+//
+//            assertEquals(createRangeDataSet(20, 40), readAvailableValues(tailer));
+//
+//            appendValues(appender, 40, 60);
+//
+//            Thread.sleep(1000L);
+//
+//            assertEquals(createRangeDataSet(40, 60), readAvailableValues(tailer));
+
+//
+//            // Verify that all values are read by the tailer
+//            final ExcerptTailer tailer = chronicle.createTailer();
+//            final Set<String> actual = readAvailableValues(tailer);
+//            assertEquals(createRangeDataSet(1, 40), actual);
+//
 //        // Verify that the tailer reads no new data from a new cycle
 //        Thread.sleep(2000L);
 //        assertTrue(!tailer.nextIndex());
@@ -455,10 +488,11 @@ public class VanillaChronicleTest {
 //
 //        // Verify that the tailer can read the new data
 //        assertEquals(createRangeDataSet(41, 60), readAvailableValues(tailer));
-//
+
 //        appender.close();
-        tailer.close();
-        chronicle.close();
+            tailer.close();
+            chronicle.close();
+        }
     }
 
     private static void appendValues(final ExcerptAppender appender, final long startValue, final long endValue) {
@@ -475,6 +509,7 @@ public class VanillaChronicleTest {
         final Set<String> values = new TreeSet<String>();
         while (tailer.nextIndex()) {
             final String value = tailer.readUTF();
+            System.out.println(String.format("## Read '%s'", value));
             values.add(value);
         }
         return values;
