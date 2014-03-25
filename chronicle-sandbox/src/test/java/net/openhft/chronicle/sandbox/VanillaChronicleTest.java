@@ -419,17 +419,11 @@ public class VanillaChronicleTest {
     }
 
     @Test
-    public void testReadAcrossChunks() throws Exception {
-        String basepath = System.getProperty("java.io.tmpdir") + "/testReadAcrossChunks";
+    public void testWriteCycles() throws Exception {
+        String basepath = System.getProperty("java.io.tmpdir") + "/testCycles";
         IOTools.deleteDir(basepath);
 
-        // Create with small data and index sizes so that the test frequently generates new files
-        final VanillaChronicleConfig config = new VanillaChronicleConfig()
-                .cycleLength(60000)
-                .cycleFormat("yyyyMMddHHmmss")
-                .dataBlockSize(64)
-                .indexBlockSize(64);
-        VanillaChronicle chronicle = new VanillaChronicle(basepath, config);
+        VanillaChronicle chronicle = createCycleChronicle(basepath);
         chronicle.clear();
 
 //        final ExcerptAppender appender = chronicle.createAppender();
@@ -438,21 +432,41 @@ public class VanillaChronicleTest {
 //        appender.finish();
 //        appender.close();
 
-        final Callable<Void> appendTask = createAppendTask(chronicle, 1000, 2000);
+        final Callable<Void> appendTask = createAppendTask(chronicle, 1, 15);
         appendTask.call();
+
+        chronicle.close();
+    }
+
+    @Test
+    public void testReadCycles() throws Exception {
+        String basepath = System.getProperty("java.io.tmpdir") + "/testCycles";
+        VanillaChronicle chronicle = createCycleChronicle(basepath);
 
 //        // Verify that all values have been written
         final ExcerptTailer tailer = chronicle.createTailer();
         final Set<String> values = readAllValues(tailer);
-        assertEquals(createRangeDataSet(1000, 2000), values);
+        assertEquals(createRangeDataSet(1, 15), values);
+
+        readAllValues(tailer);
+
         tailer.close();
 
         chronicle.close();
     }
 
+    private static VanillaChronicle createCycleChronicle(final String basepath) {
+        // Create with small data and index sizes so that the test frequently generates new files
+        final VanillaChronicleConfig config = new VanillaChronicleConfig()
+                .cycleLength(300000)  // 5 mins
+                .cycleFormat("yyyyMMddHHmmss")
+                .dataBlockSize(128)
+                .indexBlockSize(64);
+        return new VanillaChronicle(basepath, config);
+    }
+
     private static Set<String> readAllValues(final ExcerptTailer tailer) {
         final Set<String> values = new TreeSet<String>();
-        tailer.toStart();
         while (tailer.nextIndex()) {
             final String value = tailer.readUTF();
             values.add(value);
@@ -478,7 +492,7 @@ public class VanillaChronicleTest {
                 try {
                     int counter = startValue;
                     while (counter < endValue) {
-                        appender.startExcerpt();
+                        appender.startExcerpt(20);
                         appender.writeUTF("data-" + counter);
                         appender.finish();
                         counter++;
