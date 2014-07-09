@@ -44,7 +44,7 @@ import static net.openhft.chronicle.VanillaChronicleConfig.THREAD_ID_MASK;
 public class VanillaChronicle implements Chronicle {
     private static final Logger LOG = LoggerFactory.getLogger(VanillaChronicle.class);
 
-    private final AtomicLong appenderCount = new AtomicLong(0);
+    private final AtomicLong excerptCount = new AtomicLong(0);
 
     private final String name;
     private final String basePath;
@@ -184,18 +184,28 @@ public class VanillaChronicle implements Chronicle {
         if (ref != null) {
             appender = ref.get();
             if(appender != null && appender.unampped()) {
+                LOG.debug(String.format("CLEAR-APPENDER Id %03d Thread %016x Data %s Index %s", appender.id, appender.appenderThreadId, status(appender.dataBytes), status(appender.indexBytes)));
                 appender = null;
             }
         }
         if (appender == null) {
             appender = createAppender0();
+            LOG.debug(String.format("CREATE-APPENDER Id %03d Thread %016x", appender.id, AffinitySupport.getThreadId()));
             appenderCache.set(new WeakReference<VanillaAppender>(appender));
         }
         return appender;
     }
 
+    private static String status(final VanillaMappedBytes bytes) {
+        if (bytes == null) {
+            return "NULL";
+        }
+        final String mapped = bytes.unmapped() ? "UNMAPPED" : "MAPPED";
+        return mapped + "-" + bytes.refCount();
+    }
+
     private VanillaAppender createAppender0() {
-        return new VanillaAppender(appenderCount.incrementAndGet());
+        return new VanillaAppender();
     }
 
     @Override
@@ -228,6 +238,7 @@ public class VanillaChronicle implements Chronicle {
     }
 
     abstract class AbstractVanillaExcerpt extends NativeBytes implements ExcerptCommon {
+        protected final long id = excerptCount.incrementAndGet();
         private long index = -1;
         private int lastCycle = Integer.MIN_VALUE;
         private int lastDailyCount = Integer.MIN_VALUE;
@@ -245,9 +256,8 @@ public class VanillaChronicle implements Chronicle {
         }
 
         boolean unampped() {
-            return (indexBytes != null && dataBytes != null)
-                ? indexBytes.unmapped() && dataBytes.unmapped()
-                : true;
+            // FIXME: This logic seems strange
+            return indexBytes == null || dataBytes == null || indexBytes.unmapped() && dataBytes.unmapped();
         }
 
         @Override
@@ -399,10 +409,11 @@ public class VanillaChronicle implements Chronicle {
 
         @Override
         public void close() {
-            if(indexBytes != null) {
+            LOG.debug(String.format("CLOSE Id %03d Data %s Index %s", id, status(dataBytes), status(indexBytes)));
+            if (indexBytes != null) {
                 indexBytes.release();
             }
-            if(dataBytes != null) {
+            if (dataBytes != null) {
                 dataBytes.release();
             }
 
@@ -435,16 +446,14 @@ public class VanillaChronicle implements Chronicle {
     }
 
     public class VanillaAppender extends AbstractVanillaExcerpt implements ExcerptAppender {
-        private final long id;
         private int lastCycle;
         private int lastThreadId;
         private int appenderCycle;
         private int appenderThreadId;
         private boolean nextSynchronous;
 
-        VanillaAppender(final long id) {
+        VanillaAppender() {
             super();
-            this.id = id;
             lastCycle = Integer.MIN_VALUE;
             lastThreadId = Integer.MIN_VALUE;
         }
@@ -470,15 +479,18 @@ public class VanillaChronicle implements Chronicle {
                         LOG.debug(String.format("CHANGE Id %03d Cycle %08x LastC %08x Thread %016x LastT %016x", id, appenderCycle, lastCycle, appenderThreadId, lastThreadId));
                     }
                     if (dataBytes != null) {
+                        LOG.debug(String.format("DATA-RELEASE-1 Id %03d Data %s", id, status(dataBytes)));
                         dataBytes.release();
                         dataBytes = null;
                     }
                     if (indexBytes != null) {
+                        LOG.debug(String.format("INDEX-RELEASE-1 Id %03d Index %s", id, status(indexBytes)));
                         indexBytes.release();
                         indexBytes = null;
                     }
 
                     dataBytes = dataCache.dataForLast(appenderCycle, appenderThreadId);
+                    LOG.debug(String.format("DATA-GET-1 Id %03d Data %s", id, status(dataBytes)));
                     lastCycle = appenderCycle;
                     lastThreadId = appenderThreadId;
                 }
@@ -490,10 +502,11 @@ public class VanillaChronicle implements Chronicle {
                         int currentCount = dataCache.getLastCount();
                         LOG.debug(String.format("ROLL Id %03d Cycle %08x Thread %016x Prev %04d Current %04d", id, appenderCycle, appenderThreadId, previousCount, currentCount));
                     }
-                    dataCache.incrementLastCount();
-                    dataBytes.release();
+                    LOG.debug(String.format("DATA-RELEASE-2 Id %03d Data %s", id, status(dataBytes)));
+                            dataBytes.release();
                     dataBytes = null;
                     dataBytes = dataCache.dataForLast(appenderCycle, appenderThreadId);
+                    LOG.debug(String.format("DATA-GET-2 Id %03d Ref %s", id, status(dataBytes)));
                 }
 
                 startAddr = positionAddr = dataBytes.positionAddr() + 4;
@@ -531,18 +544,20 @@ public class VanillaChronicle implements Chronicle {
             long dataOffset = dataBytes.index() * config.dataBlockSize() + offset;
             long indexValue = ((long) appenderThreadId << INDEX_DATA_OFFSET_BITS) + dataOffset;
             if (LOG.isDebugEnabled()) {
-                LOG.debug(String.format("FINISH Id %03d Thread %016x Index %016x Len %016x Start %016x Pos %016x", id, appenderThreadId, indexValue, entryLen, startAddr, positionAddr));
+                LOG.debug(String.format("FINISH Id %03d Thread %016x Index %016x Len %016x Start %016x Pos %016x Data %s Index %s", id, appenderThreadId, indexValue, entryLen, startAddr, positionAddr, status(dataBytes), status(indexBytes)));
             }
             lastWrittenIndex = indexValue;
             try {
                 final boolean appendDone = (indexBytes != null) && VanillaIndexCache.append(indexBytes, indexValue, nextSynchronous);
                 if (!appendDone) {
                     if (indexBytes != null) {
+                        LOG.debug(String.format("INDEX-RELEASE-2 Id %03d Index %s", id, status(indexBytes)));
                         indexBytes.release();
                         indexBytes = null;
                     }
 
                     indexBytes = indexCache.append(appenderCycle, indexValue, nextSynchronous);
+                    LOG.debug(String.format("INDEX-GET-2 Id %03d Index %s", id, status(indexBytes)));
                 }
             } catch (IOException e) {
                 throw new AssertionError(e);
