@@ -29,6 +29,10 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static net.openhft.chronicle.VanillaChronicleConfig.INDEX_DATA_OFFSET_BITS;
 import static net.openhft.chronicle.VanillaChronicleConfig.INDEX_DATA_OFFSET_MASK;
@@ -38,6 +42,10 @@ import static net.openhft.chronicle.VanillaChronicleConfig.THREAD_ID_MASK;
  * Created by peter
  */
 public class VanillaChronicle implements Chronicle {
+    private static final Logger LOG = LoggerFactory.getLogger(VanillaChronicle.class);
+
+    private final AtomicLong appenderCount = new AtomicLong(0);
+
     private final String name;
     private final String basePath;
     private final VanillaChronicleConfig config;
@@ -187,7 +195,7 @@ public class VanillaChronicle implements Chronicle {
     }
 
     private VanillaAppender createAppender0() {
-        return new VanillaAppender();
+        return new VanillaAppender(appenderCount.incrementAndGet());
     }
 
     @Override
@@ -427,14 +435,16 @@ public class VanillaChronicle implements Chronicle {
     }
 
     public class VanillaAppender extends AbstractVanillaExcerpt implements ExcerptAppender {
+        private final long id;
         private int lastCycle;
         private int lastThreadId;
         private int appenderCycle;
         private int appenderThreadId;
         private boolean nextSynchronous;
 
-        VanillaAppender() {
+        VanillaAppender(final long id) {
             super();
+            this.id = id;
             lastCycle = Integer.MIN_VALUE;
             lastThreadId = Integer.MIN_VALUE;
         }
@@ -456,6 +466,9 @@ public class VanillaChronicle implements Chronicle {
                 assert (appenderThreadId & THREAD_ID_MASK) == appenderThreadId : "appenderThreadId: " + appenderThreadId;
 
                 if (appenderCycle != lastCycle || appenderThreadId != lastThreadId) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug(String.format("CHANGE Id %03d Cycle %08x LastC %08x Thread %016x LastT %016x", id, appenderCycle, lastCycle, appenderThreadId, lastThreadId));
+                    }
                     if (dataBytes != null) {
                         dataBytes.release();
                         dataBytes = null;
@@ -471,6 +484,12 @@ public class VanillaChronicle implements Chronicle {
                 }
 
                 if (dataBytes.remaining() < capacity + 4) {
+                    int previousCount = dataCache.getLastCount();
+                    dataCache.incrementLastCount();
+                    if (LOG.isDebugEnabled()) {
+                        int currentCount = dataCache.getLastCount();
+                        LOG.debug(String.format("ROLL Id %03d Cycle %08x Thread %016x Prev %04d Current %04d", id, appenderCycle, appenderThreadId, previousCount, currentCount));
+                    }
                     dataCache.incrementLastCount();
                     dataBytes.release();
                     dataBytes = null;
@@ -504,12 +523,16 @@ public class VanillaChronicle implements Chronicle {
         @Override
         public void finish() {
             super.finish();
-            int length = ~(int) (positionAddr - startAddr);
+            long entryLen = positionAddr - startAddr;
+            int length = ~(int) entryLen;
             NativeBytes.UNSAFE.putOrderedInt(null, startAddr - 4, length);
             // position of the start not the end.
             int offset = (int) (startAddr - dataBytes.address());
             long dataOffset = dataBytes.index() * config.dataBlockSize() + offset;
             long indexValue = ((long) appenderThreadId << INDEX_DATA_OFFSET_BITS) + dataOffset;
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(String.format("FINISH Id %03d Thread %016x Index %016x Len %016x Start %016x Pos %016x", id, appenderThreadId, indexValue, entryLen, startAddr, positionAddr));
+            }
             lastWrittenIndex = indexValue;
             try {
                 final boolean appendDone = (indexBytes != null) && VanillaIndexCache.append(indexBytes, indexValue, nextSynchronous);
