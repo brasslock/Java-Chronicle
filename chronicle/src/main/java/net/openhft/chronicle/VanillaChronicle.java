@@ -183,6 +183,7 @@ public class VanillaChronicle implements Chronicle {
         VanillaAppender appender = null;
         if (ref != null) {
             appender = ref.get();
+            LOG.debug(String.format("APPENDER-REF %s", appender == null));
             if(appender != null && appender.unampped()) {
                 LOG.debug(String.format("CLEAR-APPENDER Id %03d Thread %016x Data %s Index %s", appender.id, appender.appenderThreadId, status(appender.dataBytes), status(appender.indexBytes)));
                 appender = null;
