@@ -59,30 +59,6 @@ public class VanillaDataCache implements Closeable {
             FILE_NAME_PREFIX + threadId + "-" + dataCount);
     }
 
-    public File fileFor(int cycle, int threadId) throws IOException {
-        String cycleStr = dateCache.formatFor(cycle);
-        String cyclePath = basePath + "/" + cycleStr;
-        String dataPrefix = FILE_NAME_PREFIX + threadId + "-";
-        if (lastCycle != cycle) {
-            int maxCount = 0;
-            File[] files = new File(cyclePath).listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.getName().startsWith(dataPrefix)) {
-                        int count = Integer.parseInt(file.getName().substring(dataPrefix.length()));
-                        if (maxCount < count)
-                            maxCount = count;
-                    }
-                }
-            }
-
-            lastCycle = cycle;
-            lastCount = maxCount;
-        }
-
-        return fileFor(cycle, threadId, lastCount, true);
-    }
-
     public synchronized VanillaMappedBytes dataFor(int cycle, int threadId, int dataCount, boolean forWrite) throws IOException {
         key.cycle = cycle;
         key.threadId = threadId;
@@ -131,35 +107,27 @@ public class VanillaDataCache implements Closeable {
         this.cache.close();
     }
 
-    private int lastCycle = -1;
-    private int lastCount = -1;
+    /**
+     * Find the count for the next data file to be written for a specific thread.
+     */
+    public int findNextDataCount(int cycle, int threadId) throws IOException {
+        final String cycleStr = dateCache.formatFor(cycle);
+        final String cyclePath = basePath + "/" + cycleStr;
+        final String dataPrefix = FILE_NAME_PREFIX + threadId + "-";
 
-    public VanillaMappedBytes dataForLast(int cycle, int threadId) throws IOException {
-        String cycleStr = dateCache.formatFor(cycle);
-        String cyclePath = basePath + "/" + cycleStr;
-        String dataPrefix = FILE_NAME_PREFIX + threadId + "-";
-        if (lastCycle != cycle) {
-            int maxCount = 0;
-            File[] files = new File(cyclePath).listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.getName().startsWith(dataPrefix)) {
-                        int count = Integer.parseInt(file.getName().substring(dataPrefix.length()));
-                        if (maxCount < count)
-                            maxCount = count;
-                    }
+        int maxCount = -1;
+        final File[] files = new File(cyclePath).listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.getName().startsWith(dataPrefix)) {
+                    final int count = Integer.parseInt(file.getName().substring(dataPrefix.length()));
+                    if (maxCount < count)
+                        maxCount = count;
                 }
             }
-
-            lastCycle = cycle;
-            lastCount = maxCount;
         }
-
-        return dataFor(cycle, threadId, lastCount, true);
-    }
-
-    public void incrementLastCount() {
-        lastCount++;
+        // Move to the next data file
+        return maxCount + 1;
     }
 
     public void checkCounts(int min, int max) {
