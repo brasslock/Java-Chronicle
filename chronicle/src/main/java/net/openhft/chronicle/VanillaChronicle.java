@@ -94,7 +94,7 @@ public class VanillaChronicle implements Chronicle {
         return name;
     }
 
-    public int getEntriesForCycleBits(){
+    public int getEntriesForCycleBits() {
         return entriesForCycleBits;
     }
 
@@ -126,10 +126,10 @@ public class VanillaChronicle implements Chronicle {
      * been activated.
      * @return The last index in the file
      */
-    public long lastIndex(){
-        int cycle = (int)indexCache.lastCycle();
-        int lastIndexFile = indexCache.lastIndexFile(cycle,-1);
-        if(lastIndexFile >= 0) {
+    public long lastIndex() {
+        int cycle = (int) indexCache.lastCycle();
+        int lastIndexFile = indexCache.lastIndexFile(cycle, -1);
+        if (lastIndexFile >= 0) {
             try {
                 final VanillaMappedBytes buffer = indexCache.indexFor(cycle, lastIndexFile, false);
                 final long indices = VanillaIndexCache.countIndices(buffer);
@@ -138,7 +138,7 @@ public class VanillaChronicle implements Chronicle {
 
                 return ((cycle * config.entriesPerCycle()) + ((indices > 0) ? indices - 1 : 0));
             } catch (IOException e) {
-                    throw new AssertionError(e);
+                throw new AssertionError(e);
             }
         } else {
             return -1;
@@ -152,7 +152,7 @@ public class VanillaChronicle implements Chronicle {
         VanillaTailer tailer = null;
         if (ref != null) {
             tailer = ref.get();
-            if(tailer != null && tailer.unampped()) {
+            if (tailer != null && tailer.unmapped()) {
                 tailer = null;
             }
         }
@@ -175,7 +175,7 @@ public class VanillaChronicle implements Chronicle {
         VanillaAppender appender = null;
         if (ref != null) {
             appender = ref.get();
-            if(appender != null && appender.unampped()) {
+            if (appender != null && appender.unmapped()) {
                 appender = null;
             }
         }
@@ -219,27 +219,12 @@ public class VanillaChronicle implements Chronicle {
         dataCache.checkCounts(min, max);
     }
 
-    abstract class AbstractVanillaExcerpt extends NativeBytes implements ExcerptCommon {
-        private long index = -1;
-        private int lastCycle = Integer.MIN_VALUE;
-        private int lastDailyCount = Integer.MIN_VALUE;
-        private int lastThreadId = Integer.MIN_VALUE;
-        private int lastDataCount = Integer.MIN_VALUE;
-
+    private abstract class AbstractVanillaExcerptCommon extends NativeBytes implements ExcerptCommon {
         protected VanillaMappedBytes indexBytes;
         protected VanillaMappedBytes dataBytes;
 
-        public AbstractVanillaExcerpt() {
+        public AbstractVanillaExcerptCommon() {
             super(acquireBMF(), NO_PAGE, NO_PAGE, null);
-
-            indexBytes = null;
-            dataBytes = null;
-        }
-
-        boolean unampped() {
-            return (indexBytes != null && dataBytes != null)
-                ? indexBytes.unmapped() && dataBytes.unmapped()
-                : true;
         }
 
         @Override
@@ -247,14 +232,17 @@ public class VanillaChronicle implements Chronicle {
             return false;
         }
 
-        @Override
-        public long index() {
-            return index;
+        public boolean unmapped() {
+            return (indexBytes == null || dataBytes == null) || indexBytes.unmapped() && dataBytes.unmapped();
+        }
+
+        protected int cycle() {
+            return (int) (System.currentTimeMillis() / config.cycleLength());
         }
 
         /**
          * Return the last index written by the appender.
-         *
+         * <p/>
          * This may not be the actual last index in the Chronicle which can be
          * found from lastIndex().
          */
@@ -273,20 +261,41 @@ public class VanillaChronicle implements Chronicle {
             return VanillaChronicle.this;
         }
 
-        public int cycle() {
-            return (int) (System.currentTimeMillis() / config.cycleLength());
+        @Override
+        public void close() {
+            if (indexBytes != null) {
+                indexBytes.release();
+            }
+            if (dataBytes != null) {
+                dataBytes.release();
+            }
+
+            super.close();
+        }
+    }
+
+    private class VanillaTailer extends AbstractVanillaExcerptCommon implements ExcerptTailer {
+        private long index = -1;
+        private int lastCycle = Integer.MIN_VALUE;
+        private int lastIndexCount = Integer.MIN_VALUE;
+        private int lastThreadId = Integer.MIN_VALUE;
+        private int lastDataCount = Integer.MIN_VALUE;
+
+        @Override
+        public long index() {
+            return index;
         }
 
         public boolean index(long nextIndex) {
             checkNotClosed();
             try {
                 int cycle = (int) (nextIndex >>> entriesForCycleBits);
-                int dailyCount = (int) ((nextIndex & entriesForCycleMask) >>> indexBlockLongsBits);
-                int dailyOffset = (int) (nextIndex & indexBlockLongsMask);
+                int indexCount = (int) ((nextIndex & entriesForCycleMask) >>> indexBlockLongsBits);
+                int indexOffset = (int) (nextIndex & indexBlockLongsMask);
                 long indexValue;
                 boolean indexFileChange = false;
                 try {
-                    if (lastCycle != cycle || lastDailyCount != dailyCount || indexBytes==null) {
+                    if (lastCycle != cycle || lastIndexCount != indexCount || indexBytes == null) {
                         if (indexBytes != null) {
                             indexBytes.release();
                             indexBytes = null;
@@ -296,14 +305,13 @@ public class VanillaChronicle implements Chronicle {
                             dataBytes = null;
                         }
 
-                        indexBytes = indexCache.indexFor(cycle, dailyCount, false);
+                        indexBytes = indexCache.indexFor(cycle, indexCount, false);
                         indexFileChange = true;
                         assert indexBytes.refCount() > 1;
                         lastCycle = cycle;
-                        lastDailyCount = dailyCount;
-
+                        lastIndexCount = indexCount;
                     }
-                    indexValue = indexBytes.readVolatileLong(dailyOffset << 3);
+                    indexValue = indexBytes.readVolatileLong(indexOffset << 3);
                 } catch (FileNotFoundException e) {
                     return false;
                 }
@@ -367,8 +375,8 @@ public class VanillaChronicle implements Chronicle {
         }
 
         @NotNull
-        public ExcerptCommon toStart() {
-            int cycle = (int)indexCache.firstCycle();
+        public ExcerptTailer toStart() {
+            int cycle = (int) indexCache.firstCycle();
             if (cycle >= 0) {
                 index = (cycle * config.entriesPerCycle()) - 1;
             }
@@ -378,11 +386,11 @@ public class VanillaChronicle implements Chronicle {
 
         @NotNull
         @Override
-        public ExcerptCommon toEnd() {
+        public ExcerptTailer toEnd() {
             long lastIndex = lastIndex();
-            if(lastIndex >= 0){
+            if (lastIndex >= 0) {
                 index(lastIndex);
-            }  else {
+            } else {
                 return toStart();
             }
 
@@ -390,19 +398,12 @@ public class VanillaChronicle implements Chronicle {
         }
 
         @Override
-        public void close() {
-            if(indexBytes != null) {
-                indexBytes.release();
-            }
-            if(dataBytes != null) {
-                dataBytes.release();
-            }
-
-            super.close();
+        public long capacity() {
+            return limitAddr - startAddr;
         }
     }
 
-    class VanillaExcerpt extends AbstractVanillaExcerpt implements Excerpt {
+    private class VanillaExcerpt extends VanillaTailer implements Excerpt {
         public long findMatch(@NotNull ExcerptComparator comparator) {
             throw new UnsupportedOperationException();
         }
@@ -426,23 +427,18 @@ public class VanillaChronicle implements Chronicle {
         }
     }
 
-    public class VanillaAppender extends AbstractVanillaExcerpt implements ExcerptAppender {
-        private int lastCycle;
-        private int lastThreadId;
+    public class VanillaAppender extends AbstractVanillaExcerptCommon implements ExcerptAppender {
+        private int lastCycle = Integer.MIN_VALUE;
+        private int lastThreadId = Integer.MIN_VALUE;
         private int appenderCycle;
         private int appenderThreadId;
         private boolean nextSynchronous;
-
-        VanillaAppender() {
-            super();
-            lastCycle = Integer.MIN_VALUE;
-            lastThreadId = Integer.MIN_VALUE;
-        }
 
         @Override
         public void startExcerpt() {
             startExcerpt(config.defaultMessageSize());
         }
+
         @Override
         public void startExcerpt(long capacity) {
             startExcerpt(capacity, cycle());
@@ -533,6 +529,11 @@ public class VanillaChronicle implements Chronicle {
             }
         }
 
+        @Override
+        public long index() {
+            return -1;
+        }
+
         @NotNull
         @Override
         public ExcerptAppender toEnd() {
@@ -541,26 +542,4 @@ public class VanillaChronicle implements Chronicle {
         }
     }
 
-    class VanillaTailer extends AbstractVanillaExcerpt implements ExcerptTailer {
-
-        @NotNull
-        @Override
-        public ExcerptTailer toStart() {
-            super.toStart();
-            return this;
-        }
-
-        @NotNull
-        @Override
-        public ExcerptTailer toEnd() {
-            super.toEnd();
-            return this;
-        }
-
-        //Must add this to get the correct capacity
-        @Override
-        public long capacity() {
-            return limitAddr - startAddr;
-        }
-    }
 }
