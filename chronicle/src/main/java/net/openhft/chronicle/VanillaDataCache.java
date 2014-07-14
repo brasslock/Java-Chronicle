@@ -24,7 +24,12 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class VanillaDataCache implements Closeable {
+    private static final Logger LOG = LoggerFactory.getLogger(VanillaDataCache.class);
+
     private static final String FILE_NAME_PREFIX = "data-";
 
     private final String basePath;
@@ -66,6 +71,9 @@ public class VanillaDataCache implements Closeable {
 
         VanillaMappedBytes vmb = this.cache.get(key);
         if(vmb == null) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(String.format("CREATE Cycle %016x Thread %016x Count %04d", cycle, threadId, dataCount));
+            }
             vmb = this.cache.put(
                 key.clone(),
                 VanillaChronicleUtils.mkFiles(
@@ -75,6 +83,10 @@ public class VanillaDataCache implements Closeable {
                     forWrite),
                 1L << blockBits,
                 dataCount);
+        } else {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug(String.format("FETCH Cycle %016x Thread %016x Count %04d", cycle, threadId, dataCount));
+            }
         }
 
         vmb.reserve();
