@@ -26,7 +26,7 @@
     </parent>
 
     <artifactId>chronicle</artifactId>
-    <version>3.2.0-SNAPSHOT</version>
+    <version>3.2.0-diagnostics-8a6690e9</version>
     <packaging>bundle</packaging>
 
     <name>OpenHTF/Java-Chronicle/chronicle</name>
@@ -164,6 +164,13 @@
         </repository>
     </repositories>
 
+    <distributionManagement>
+        <repository>
+            <id>cxense_deploy</id>
+            <name>Cxense repository</name>
+            <url>http://localhost:9901/nexus/content/repositories/releases</url>
+        </repository>
+    </distributionManagement>
 
     <scm>
         <url>scm:git:git@github.com:OpenHFT/Java-Chronicle.git</url>
