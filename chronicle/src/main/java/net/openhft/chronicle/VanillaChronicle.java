@@ -486,6 +486,7 @@ public class VanillaChronicle implements Chronicle {
         private int appenderThreadId;
         private boolean nextSynchronous;
         private long[] positionArr = { 0L };
+        private int dataCount;
 
         @Override
         public void startExcerpt() {
@@ -514,16 +515,17 @@ public class VanillaChronicle implements Chronicle {
                         indexBytes = null;
                     }
 
-                    dataBytes = dataCache.dataForLast(appenderCycle, appenderThreadId);
+                    dataCount = dataCache.findNextDataCount(appenderCycle, appenderThreadId);
+                    dataBytes = dataCache.dataFor(appenderCycle, appenderThreadId, dataCount, true);
                     lastCycle = appenderCycle;
                     lastThreadId = appenderThreadId;
                 }
 
                 if (dataBytes.remaining() < capacity + 4) {
-                    dataCache.incrementLastCount();
                     dataBytes.release();
                     dataBytes = null;
-                    dataBytes = dataCache.dataForLast(appenderCycle, appenderThreadId);
+                    dataCount++;
+                    dataBytes = dataCache.dataFor(appenderCycle, appenderThreadId, dataCount, true);
                 }
 
                 startAddr = positionAddr = dataBytes.positionAddr() + 4;
